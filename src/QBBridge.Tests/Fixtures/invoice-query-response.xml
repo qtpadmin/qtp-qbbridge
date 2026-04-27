@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRs>
+    <InvoiceQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK">
+      <InvoiceRet>
+        <TxnID>ABCDEF01-1700000000</TxnID>
+        <TimeCreated>2025-10-01T09:15:22-05:00</TimeCreated>
+        <TimeModified>2025-10-02T12:49:23-05:00</TimeModified>
+        <EditSequence>1700000000</EditSequence>
+        <TxnNumber>12345</TxnNumber>
+        <CustomerRef>
+          <ListID>80000001-1600000000</ListID>
+          <FullName>AmeriSys</FullName>
+        </CustomerRef>
+        <TxnDate>2025-10-01</TxnDate>
+        <RefNumber>123266</RefNumber>
+        <DueDate>2025-10-31</DueDate>
+        <Subtotal>135.00</Subtotal>
+        <AppliedAmount>135.00</AppliedAmount>
+        <BalanceRemaining>0.00</BalanceRemaining>
+        <IsPaid>true</IsPaid>
+      </InvoiceRet>
+      <InvoiceRet>
+        <TxnID>ABCDEF02-1700000001</TxnID>
+        <TimeCreated>2025-10-01T09:18:05-05:00</TimeCreated>
+        <TimeModified>2025-10-01T09:18:05-05:00</TimeModified>
+        <EditSequence>1700000001</EditSequence>
+        <TxnNumber>12346</TxnNumber>
+        <CustomerRef>
+          <ListID>80000002-1600000000</ListID>
+          <FullName>AmeriSys</FullName>
+        </CustomerRef>
+        <TxnDate>2025-10-01</TxnDate>
+        <RefNumber>123267</RefNumber>
+        <DueDate>2025-10-31</DueDate>
+        <Subtotal>168.75</Subtotal>
+        <AppliedAmount>0.00</AppliedAmount>
+        <BalanceRemaining>168.75</BalanceRemaining>
+        <IsPaid>false</IsPaid>
+      </InvoiceRet>
+      <InvoiceRet>
+        <TxnID>ABCDEF03-1700000002</TxnID>
+        <TimeCreated>2025-10-01T10:00:00-05:00</TimeCreated>
+        <TimeModified>2025-10-01T10:00:00-05:00</TimeModified>
+        <CustomerRef>
+          <FullName>Paradigm Health</FullName>
+        </CustomerRef>
+        <TxnDate>2025-10-01</TxnDate>
+        <RefNumber>123268</RefNumber>
+        <Subtotal>450.00</Subtotal>
+        <IsPaid>false</IsPaid>
+      </InvoiceRet>
+    </InvoiceQueryRs>
+  </QBXMLMsgsRs>
+</QBXML>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRs>
+    <InvoiceQueryRs requestID="1" statusCode="0" statusSeverity="Info">
+      <InvoiceRet>
+        <TxnID>MIX-INV-01</TxnID>
+        <RefNumber>999001</RefNumber>
+        <TxnDate>2026-04-01</TxnDate>
+        <CustomerRef><FullName>GMT Care</FullName></CustomerRef>
+        <Subtotal>250.00</Subtotal>
+        <BalanceRemaining>250.00</BalanceRemaining>
+        <IsPaid>false</IsPaid>
+      </InvoiceRet>
+    </InvoiceQueryRs>
+    <ReceivePaymentQueryRs requestID="2" statusCode="0" statusSeverity="Info">
+      <ReceivePaymentRet>
+        <TxnID>MIX-PAY-01</TxnID>
+        <TxnDate>2026-04-15</TxnDate>
+        <CustomerRef><FullName>GMT Care</FullName></CustomerRef>
+        <TotalAmount>250.00</TotalAmount>
+        <AppliedToTxnRet>
+          <RefNumber>999001</RefNumber>
+          <Amount>250.00</Amount>
+          <BalanceRemaining>0.00</BalanceRemaining>
+        </AppliedToTxnRet>
+      </ReceivePaymentRet>
+    </ReceivePaymentQueryRs>
+  </QBXMLMsgsRs>
+</QBXML>

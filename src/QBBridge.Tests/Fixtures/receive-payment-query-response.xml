@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRs>
+    <ReceivePaymentQueryRs requestID="2" statusCode="0" statusSeverity="Info" statusMessage="Status OK">
+      <ReceivePaymentRet>
+        <TxnID>PAY00001-1700100000</TxnID>
+        <TimeCreated>2025-10-02T12:48:00-05:00</TimeCreated>
+        <TimeModified>2025-10-02T12:49:23-05:00</TimeModified>
+        <EditSequence>1700100000</EditSequence>
+        <TxnNumber>50001</TxnNumber>
+        <CustomerRef>
+          <ListID>80000001-1600000000</ListID>
+          <FullName>AmeriSys</FullName>
+        </CustomerRef>
+        <TxnDate>2025-10-02</TxnDate>
+        <RefNumber>PMT-50001</RefNumber>
+        <TotalAmount>303.75</TotalAmount>
+        <PaymentMethodRef>
+          <FullName>Check</FullName>
+        </PaymentMethodRef>
+        <AppliedToTxnRet>
+          <TxnID>ABCDEF01-1700000000</TxnID>
+          <TxnType>Invoice</TxnType>
+          <TxnDate>2025-10-01</TxnDate>
+          <RefNumber>123266</RefNumber>
+          <BalanceRemaining>0.00</BalanceRemaining>
+          <Amount>135.00</Amount>
+        </AppliedToTxnRet>
+        <AppliedToTxnRet>
+          <TxnID>ABCDEF02-1700000001</TxnID>
+          <TxnType>Invoice</TxnType>
+          <TxnDate>2025-10-01</TxnDate>
+          <RefNumber>123267</RefNumber>
+          <BalanceRemaining>0.00</BalanceRemaining>
+          <Amount>168.75</Amount>
+        </AppliedToTxnRet>
+        <UnusedPayment>0.00</UnusedPayment>
+      </ReceivePaymentRet>
+      <ReceivePaymentRet>
+        <TxnID>PAY00002-1700100001</TxnID>
+        <TimeModified>2025-10-05T10:15:00-05:00</TimeModified>
+        <CustomerRef>
+          <FullName>Travelers PC Claim</FullName>
+        </CustomerRef>
+        <TxnDate>2025-10-05</TxnDate>
+        <TotalAmount>1000.00</TotalAmount>
+        <AppliedToTxnRet>
+          <TxnType>Invoice</TxnType>
+          <RefNumber>123300</RefNumber>
+          <BalanceRemaining>500.00</BalanceRemaining>
+          <Amount>1000.00</Amount>
+        </AppliedToTxnRet>
+        <UnusedPayment>0.00</UnusedPayment>
+      </ReceivePaymentRet>
+    </ReceivePaymentQueryRs>
+  </QBXMLMsgsRs>
+</QBXML>

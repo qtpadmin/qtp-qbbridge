@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<QBWCXML>
+  <AppName>QTP QB Bridge for InTime</AppName>
+  <AppID>{E4D76FBF-F285-4C84-BE1B-AB5377197FE6}</AppID>
+  <AppUniqueName>QTPQBBridge</AppUniqueName>
+  <AppURL>http://localhost:8443/qbwc</AppURL>
+  <AppDescription>Syncs paid-invoice data from QuickBooks Enterprise to the InTime reconciliation report. Read-only in v1. Runs on a schedule via QuickBooks Web Connector.</AppDescription>
+  <AppSupport>https://myqtpro.com/support</AppSupport>
+  <UserName>qbjnjadmin</UserName>
+  <OwnerID>{98942F89-18EE-4267-97A1-FAA5D339B469}</OwnerID>
+  <FileID>{E4D76FBF-F285-4C84-BE1B-AB5377197FE6}</FileID>
+  <QBType>QBFS</QBType>
+  <Scheduler>
+    <RunEveryNMinutes>1440</RunEveryNMinutes>
+  </Scheduler>
+  <IsReadOnly>false</IsReadOnly>
+</QBWCXML>
