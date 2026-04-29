@@ -13,5 +13,5 @@
   <Scheduler>
     <RunEveryNMinutes>1440</RunEveryNMinutes>
   </Scheduler>
-  <IsReadOnly>false</IsReadOnly>
+  <IsReadOnly>true</IsReadOnly>
 </QBWCXML>
