@@ -135,6 +135,87 @@ public sealed class QbxmlBuilder
         return Wrap(sb.ToString().TrimEnd());
     }
 
+    /// <summary>
+    /// VendorAdd qbXML for a QB Vendor record (Phase 2: QBContractors → QB Vendor).
+    ///
+    /// Address rules: QB Vendors have a single VendorAddress block. QBContractors
+    /// stores a mailing address (ml*) and a physical address separately, so we
+    /// prefer mailing when Address1 is populated, otherwise fall back to physical.
+    /// The Addressflag column suggests which is canonical — historic data shows
+    /// 'A' when only the physical address is set; we treat null/empty mailing as
+    /// the trigger to fall back regardless of the flag.
+    ///
+    /// 1099 handling: flag1099 column is int (1=track, 0=skip). Mapped to
+    /// IsVendorEligibleFor1099 boolean. TaxID populates VendorTaxIdent.
+    ///
+    /// Phone: WorkPhone → Phone, CellPhone → AltPhone.
+    /// </summary>
+    public string VendorAdd(PendingContractor v, int requestId)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"<VendorAddRq requestID=\"{requestId}\">");
+        sb.AppendLine("  <VendorAdd>");
+
+        var name = Truncate(v.FullName, 41);
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException(
+                $"QBContractors.ContractorIntfID is null/empty for QBContractorsID={v.QbContractorsId}; cannot build VendorAdd");
+        sb.AppendLine($"    <Name>{X(name)}</Name>");
+
+        if (!string.IsNullOrWhiteSpace(v.CompanyName))
+            sb.AppendLine($"    <CompanyName>{X(Truncate(v.CompanyName, 41))}</CompanyName>");
+        if (!string.IsNullOrWhiteSpace(v.FirstName))
+            sb.AppendLine($"    <FirstName>{X(Truncate(v.FirstName, 25))}</FirstName>");
+        if (!string.IsNullOrWhiteSpace(v.MiddleName))
+            sb.AppendLine($"    <MiddleName>{X(Truncate(v.MiddleName, 5))}</MiddleName>");
+        if (!string.IsNullOrWhiteSpace(v.LastName))
+            sb.AppendLine($"    <LastName>{X(Truncate(v.LastName, 25))}</LastName>");
+
+        // Address selection: prefer mailing, fall back to physical.
+        var addr1 = !string.IsNullOrWhiteSpace(v.MailAddress1) ? v.MailAddress1 : v.Address1;
+        var addr2 = !string.IsNullOrWhiteSpace(v.MailAddress1) ? v.MailAddress2 : v.Address2;
+        var addr3 = !string.IsNullOrWhiteSpace(v.MailAddress1) ? v.MailAddress3 : null; // physical has no Address3
+        var city  = !string.IsNullOrWhiteSpace(v.MailAddress1) ? v.MailCity      : v.City;
+        var state = !string.IsNullOrWhiteSpace(v.MailAddress1) ? v.MailStateCode : v.StateCode;
+        var zip   = !string.IsNullOrWhiteSpace(v.MailAddress1) ? v.MailZipCode   : v.ZipCode;
+
+        if (!string.IsNullOrWhiteSpace(addr1))
+        {
+            sb.AppendLine("    <VendorAddress>");
+            sb.AppendLine($"      <Addr1>{X(Truncate(addr1, 41))}</Addr1>");
+            if (!string.IsNullOrWhiteSpace(addr2)) sb.AppendLine($"      <Addr2>{X(Truncate(addr2, 41))}</Addr2>");
+            if (!string.IsNullOrWhiteSpace(addr3)) sb.AppendLine($"      <Addr3>{X(Truncate(addr3, 41))}</Addr3>");
+            if (!string.IsNullOrWhiteSpace(city))  sb.AppendLine($"      <City>{X(Truncate(city, 31))}</City>");
+            if (!string.IsNullOrWhiteSpace(state)) sb.AppendLine($"      <State>{X(Truncate(state, 21))}</State>");
+            if (!string.IsNullOrWhiteSpace(zip))   sb.AppendLine($"      <PostalCode>{X(Truncate(zip, 13))}</PostalCode>");
+            sb.AppendLine("    </VendorAddress>");
+        }
+
+        if (!string.IsNullOrWhiteSpace(v.WorkPhone))
+            sb.AppendLine($"    <Phone>{X(Truncate(v.WorkPhone, 21))}</Phone>");
+        if (!string.IsNullOrWhiteSpace(v.CellPhone))
+            sb.AppendLine($"    <AltPhone>{X(Truncate(v.CellPhone, 21))}</AltPhone>");
+        if (!string.IsNullOrWhiteSpace(v.Fax))
+            sb.AppendLine($"    <Fax>{X(Truncate(v.Fax, 21))}</Fax>");
+
+        // 1099 fields. flag1099 is non-null int in DB but treat null defensively.
+        if (!string.IsNullOrWhiteSpace(v.TaxId))
+            sb.AppendLine($"    <VendorTaxIdent>{X(Truncate(v.TaxId, 15))}</VendorTaxIdent>");
+        if (v.Flag1099.HasValue)
+            sb.AppendLine($"    <IsVendorEligibleFor1099>{(v.Flag1099 == 1 ? "true" : "false")}</IsVendorEligibleFor1099>");
+
+        // List refs. Failure to resolve in QB → AddRs returns error, ImportFlag stays 0.
+        if (!string.IsNullOrWhiteSpace(v.TermsCode))
+            sb.AppendLine($"    <TermsRef><FullName>{X(v.TermsCode)}</FullName></TermsRef>");
+        if (!string.IsNullOrWhiteSpace(v.ContractorTypeCode))
+            sb.AppendLine($"    <VendorTypeRef><FullName>{X(v.ContractorTypeCode)}</FullName></VendorTypeRef>");
+
+        sb.AppendLine("  </VendorAdd>");
+        sb.AppendLine("</VendorAddRq>");
+
+        return Wrap(sb.ToString().TrimEnd());
+    }
+
     private static string X(string? s) => SecurityElement.Escape(s ?? "") ?? "";
 
     private static string? Truncate(string? s, int max) =>

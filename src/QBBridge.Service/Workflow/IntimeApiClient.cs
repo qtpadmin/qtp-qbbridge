@@ -122,8 +122,47 @@ public sealed class IntimeApiClient
         }
     }
 
+    // Phase 2: contractors → QB Vendors
+
+    public async Task<IReadOnlyList<PendingContractor>> GetPendingContractorsAsync(int limit = 50)
+    {
+        try
+        {
+            var resp = await _http.GetFromJsonAsync<PendingContractorsResponse>(
+                $"api/qb-payment-sync/pending/contractors?limit={limit}");
+            return resp?.Contractors ?? new List<PendingContractor>();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to fetch pending contractors — skipping vendor writeback this cycle");
+            return new List<PendingContractor>();
+        }
+    }
+
+    public async Task AckContractorAsync(int qbContractorsId, string? listId, string? name, string status, string? error)
+    {
+        var payload = new
+        {
+            qbContractorsId,
+            qbListId = listId,
+            qbName = name,
+            status,
+            error,
+        };
+        try
+        {
+            var resp = await _http.PostAsJsonAsync("api/qb-payment-sync/ack/contractor", payload);
+            resp.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "ack/contractor failed for QBContractorsID={Id}", qbContractorsId);
+        }
+    }
+
     private sealed record LastSyncResponse(DateTime? LastSync);
     private sealed record PendingCustomersResponse(List<PendingCustomer> Customers);
+    private sealed record PendingContractorsResponse(List<PendingContractor> Contractors);
 }
 
 /// <summary>
@@ -148,5 +187,41 @@ public sealed record PendingCustomer(
     string? TollfreePhone,
     string? Fax,
     string? CustomerTypeCode,
+    string? TermsCode,
+    DateTime? LastChangeDate);
+
+/// <summary>
+/// Mirrors GET /api/qb-payment-sync/pending/contractors. QBContractors has both
+/// a mailing address (ml*) and a physical address (Address*); we prefer mailing
+/// when populated and fall back to physical, since QB Vendors take only one
+/// VendorAddress block.
+/// </summary>
+public sealed record PendingContractor(
+    int QbContractorsId,
+    int? ContractorId,
+    string? FullName,
+    string? CompanyName,
+    string? FirstName,
+    string? MiddleName,
+    string? LastName,
+    string? MailingName,
+    string? MailAddress1,
+    string? MailAddress2,
+    string? MailAddress3,
+    string? MailCity,
+    string? MailStateCode,
+    string? MailZipCode,
+    string? Address1,
+    string? Address2,
+    string? City,
+    string? StateCode,
+    string? ZipCode,
+    string? AddressFlag,
+    string? WorkPhone,
+    string? CellPhone,
+    string? Fax,
+    string? TaxId,
+    int? Flag1099,
+    string? ContractorTypeCode,
     string? TermsCode,
     DateTime? LastChangeDate);

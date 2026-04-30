@@ -4,13 +4,18 @@ namespace QBBridge.Service.Soap;
 
 public sealed class QbwcService : IQbwcService
 {
-    // Phase 1 cap: never queue more than this many CustomerAdd requests per QBWC cycle.
+    // Per-cycle caps: never queue more than this many writes per QBWC cycle.
     // Keeps sessions short and bounds blast radius if something goes wrong.
     private const int MaxCustomerAddsPerCycle = 100;
+    private const int MaxVendorAddsPerCycle = 100;
 
-    // qbXML requestID space: 1-99 reserved for read queries, 1000+ for write-backs
-    // so we can correlate response → pending-ack lookup without collision.
+    // qbXML requestID space:
+    //   1-99       reserved for read queries (Invoice, ReceivePayment)
+    //   1000-1999  CustomerAdd (Phase 1)
+    //   2000-2999  VendorAdd (Phase 2)
+    //   3000-3999  reserved for sub-customer (Claim) Add (Phase 3)
     private const int CustomerAddBaseRequestId = 1000;
+    private const int VendorAddBaseRequestId = 2000;
 
     private readonly SessionStore _sessions;
     private readonly QbxmlBuilder _builder;
@@ -20,6 +25,7 @@ public sealed class QbwcService : IQbwcService
     private readonly string _expectedUser;
     private readonly string _expectedPass;
     private readonly bool _writebackCustomersEnabled;
+    private readonly bool _writebackContractorsEnabled;
     private readonly bool _writebackDryRun;
 
     public QbwcService(
@@ -41,6 +47,9 @@ public sealed class QbwcService : IQbwcService
                 "QBWC_PASSWORD env var is not set. Set it via Windows Credential Manager / Machine env var.");
         _writebackCustomersEnabled = string.Equals(
             Environment.GetEnvironmentVariable("WRITEBACK_CUSTOMERS_ENABLED"),
+            "true", StringComparison.OrdinalIgnoreCase);
+        _writebackContractorsEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("WRITEBACK_CONTRACTORS_ENABLED"),
             "true", StringComparison.OrdinalIgnoreCase);
         _writebackDryRun = string.Equals(
             Environment.GetEnvironmentVariable("WRITEBACK_DRY_RUN"),
@@ -119,6 +128,57 @@ public sealed class QbwcService : IQbwcService
             {
                 // Failure to fetch pending shouldn't block the read-side bridge.
                 _log.LogError(ex, "Write-back queueing failed; continuing with read-only sync this cycle");
+            }
+        }
+
+        // Phase 2 write-back: vendors. Same shape as Phase 1, separate env flag so
+        // contractors can be activated independently of customers (or dry-run together).
+        if (_writebackContractorsEnabled)
+        {
+            try
+            {
+                var pendingContractors = _intime
+                    .GetPendingContractorsAsync(MaxVendorAddsPerCycle)
+                    .GetAwaiter().GetResult();
+
+                int requestId = VendorAddBaseRequestId;
+                int queued = 0;
+                foreach (var pv in pendingContractors)
+                {
+                    string xml;
+                    try { xml = _builder.VendorAdd(pv, requestId); }
+                    catch (Exception ex)
+                    {
+                        _log.LogWarning(ex, "VendorAdd build failed for QBContractorsID={Id}; skipping", pv.QbContractorsId);
+                        _intime.AckContractorAsync(pv.QbContractorsId, null, pv.FullName, "skipped", ex.Message)
+                            .GetAwaiter().GetResult();
+                        continue;
+                    }
+
+                    if (_writebackDryRun)
+                    {
+                        _log.LogInformation(
+                            "DRY-RUN VendorAdd payload for QBContractorsID={Id} ({Name}):\n{Xml}",
+                            pv.QbContractorsId, pv.FullName, xml);
+                        continue;
+                    }
+
+                    session.PendingRequests.Enqueue(xml);
+                    session.PendingAcks[requestId] = new PendingWriteback("contractor", pv.QbContractorsId, pv.FullName);
+                    requestId++;
+                    queued++;
+                }
+
+                if (queued > 0)
+                    _log.LogInformation("Phase 2 write-back: queued {N} VendorAdd requests", queued);
+                else if (_writebackDryRun)
+                    _log.LogInformation("Phase 2 write-back: DRY-RUN, {N} payloads logged", pendingContractors.Count);
+                else
+                    _log.LogInformation("Phase 2 write-back: no pending contractors");
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Phase 2 write-back queueing failed; continuing");
             }
         }
 
@@ -215,6 +275,17 @@ public sealed class QbwcService : IQbwcService
                         _log.LogWarning("CustomerAdd failed for QBCustomersID={Id} ({Name}): {Err}",
                             pending.InTimeId, pending.FullName, add.Error);
                 }
+                else if (pending.Kind == "contractor")
+                {
+                    var status = add.Ok ? "ok" : "qb_error";
+                    _intime.AckContractorAsync(pending.InTimeId, add.ListId, add.FullName ?? pending.FullName, status, add.Error)
+                        .GetAwaiter().GetResult();
+                    if (add.Ok) session.ContractorsAdded++;
+                    else session.ContractorsFailed++;
+                    if (!add.Ok)
+                        _log.LogWarning("VendorAdd failed for QBContractorsID={Id} ({Name}): {Err}",
+                            pending.InTimeId, pending.FullName, add.Error);
+                }
 
                 session.PendingAcks.Remove(add.RequestId!.Value);
             }
@@ -249,7 +320,7 @@ public sealed class QbwcService : IQbwcService
         var s = _sessions.Get(ticket);
         if (s is null) return "unknown ticket";
 
-        var summary = $"OK: {s.InvoicesUpdated} invoices, {s.PaymentsProcessed} payments, {s.CustomersAdded} customers added ({s.CustomersFailed} failed) since {s.LastSyncDate:yyyy-MM-dd}";
+        var summary = $"OK: {s.InvoicesUpdated} invoices, {s.PaymentsProcessed} payments, {s.CustomersAdded} customers added ({s.CustomersFailed} failed), {s.ContractorsAdded} contractors added ({s.ContractorsFailed} failed) since {s.LastSyncDate:yyyy-MM-dd}";
         _log.LogInformation("Closing session {Ticket}: {Summary}", ticket, summary);
 
         _intime.RecordSyncSummaryAsync(s).GetAwaiter().GetResult();
