@@ -208,7 +208,16 @@ Write-Stage 'Set machine-level environment variables'
 [Environment]::SetEnvironmentVariable('INTIME_API_BEARER_TOKEN', $env:INTIME_API_BEARER_TOKEN,'Machine')
 [Environment]::SetEnvironmentVariable('QBBRIDGE_TLS_THUMBPRINT', $cert.Thumbprint,            'Machine')
 [Environment]::SetEnvironmentVariable('QBBRIDGE_LOG_DIR',        $LogDir,                     'Machine')
-Write-Ok 'Env vars set (6)'
+# Phase 1 write-back toggles. Default: disabled. Flip via Set Machine env on J-DC2 then restart QTPQBBridge service.
+#   WRITEBACK_CUSTOMERS_ENABLED=true   → bridge fetches QBCustomers WHERE ImportFlag=0 and pushes via CustomerAddRq
+#   WRITEBACK_DRY_RUN=true             → log qbXML payload but skip queueing (safe first-cycle preview)
+if (-not [Environment]::GetEnvironmentVariable('WRITEBACK_CUSTOMERS_ENABLED', 'Machine')) {
+    [Environment]::SetEnvironmentVariable('WRITEBACK_CUSTOMERS_ENABLED', 'false', 'Machine')
+}
+if (-not [Environment]::GetEnvironmentVariable('WRITEBACK_DRY_RUN', 'Machine')) {
+    [Environment]::SetEnvironmentVariable('WRITEBACK_DRY_RUN', 'false', 'Machine')
+}
+Write-Ok 'Env vars set (8: 6 existing + 2 write-back toggles, default off)'
 
 # ─────────────────────────────────────────────────────────────
 # 5. Create / update the Windows service

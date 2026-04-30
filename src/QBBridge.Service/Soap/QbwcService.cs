@@ -4,6 +4,14 @@ namespace QBBridge.Service.Soap;
 
 public sealed class QbwcService : IQbwcService
 {
+    // Phase 1 cap: never queue more than this many CustomerAdd requests per QBWC cycle.
+    // Keeps sessions short and bounds blast radius if something goes wrong.
+    private const int MaxCustomerAddsPerCycle = 100;
+
+    // qbXML requestID space: 1-99 reserved for read queries, 1000+ for write-backs
+    // so we can correlate response → pending-ack lookup without collision.
+    private const int CustomerAddBaseRequestId = 1000;
+
     private readonly SessionStore _sessions;
     private readonly QbxmlBuilder _builder;
     private readonly QbxmlParser _parser;
@@ -11,6 +19,8 @@ public sealed class QbwcService : IQbwcService
     private readonly ILogger<QbwcService> _log;
     private readonly string _expectedUser;
     private readonly string _expectedPass;
+    private readonly bool _writebackCustomersEnabled;
+    private readonly bool _writebackDryRun;
 
     public QbwcService(
         SessionStore sessions,
@@ -29,6 +39,12 @@ public sealed class QbwcService : IQbwcService
         _expectedPass = Environment.GetEnvironmentVariable("QBWC_PASSWORD")
             ?? throw new InvalidOperationException(
                 "QBWC_PASSWORD env var is not set. Set it via Windows Credential Manager / Machine env var.");
+        _writebackCustomersEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("WRITEBACK_CUSTOMERS_ENABLED"),
+            "true", StringComparison.OrdinalIgnoreCase);
+        _writebackDryRun = string.Equals(
+            Environment.GetEnvironmentVariable("WRITEBACK_DRY_RUN"),
+            "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public string[] authenticate(string strUserName, string strPassword)
@@ -51,11 +67,66 @@ public sealed class QbwcService : IQbwcService
         session.PendingRequests.Enqueue(_builder.ReceivePaymentQuery(lastSync));
         session.LastSyncDate = lastSync;
 
+        // Phase 1 write-back: queue CustomerAdd requests for any pending QBCustomers rows.
+        // Disabled by default; flip via WRITEBACK_CUSTOMERS_ENABLED=true on J-DC2 machine env.
+        // Dry-run mode (WRITEBACK_DRY_RUN=true) logs the qbXML payload but skips queueing,
+        // so we can eyeball the first cycle's output before actually pushing to QB.
+        if (_writebackCustomersEnabled)
+        {
+            try
+            {
+                var pendingCustomers = _intime
+                    .GetPendingCustomersAsync(MaxCustomerAddsPerCycle)
+                    .GetAwaiter().GetResult();
+
+                int requestId = CustomerAddBaseRequestId;
+                int queued = 0;
+                foreach (var pc in pendingCustomers)
+                {
+                    string xml;
+                    try { xml = _builder.CustomerAdd(pc, requestId); }
+                    catch (Exception ex)
+                    {
+                        // Bad input row (e.g. null FullName) — ack as skipped so it doesn't block the queue.
+                        _log.LogWarning(ex, "CustomerAdd build failed for QBCustomersID={Id}; skipping", pc.QbCustomersId);
+                        _intime.AckCustomerAsync(pc.QbCustomersId, null, pc.FullName, "skipped", ex.Message)
+                            .GetAwaiter().GetResult();
+                        continue;
+                    }
+
+                    if (_writebackDryRun)
+                    {
+                        _log.LogInformation(
+                            "DRY-RUN CustomerAdd payload for QBCustomersID={Id} ({Name}):\n{Xml}",
+                            pc.QbCustomersId, pc.FullName, xml);
+                        continue;
+                    }
+
+                    session.PendingRequests.Enqueue(xml);
+                    session.PendingAcks[requestId] = new PendingWriteback("customer", pc.QbCustomersId, pc.FullName);
+                    requestId++;
+                    queued++;
+                }
+
+                if (queued > 0)
+                    _log.LogInformation("Phase 1 write-back: queued {N} CustomerAdd requests", queued);
+                else if (_writebackDryRun)
+                    _log.LogInformation("Phase 1 write-back: DRY-RUN, {N} payloads logged", pendingCustomers.Count);
+                else
+                    _log.LogInformation("Phase 1 write-back: no pending customers");
+            }
+            catch (Exception ex)
+            {
+                // Failure to fetch pending shouldn't block the read-side bridge.
+                _log.LogError(ex, "Write-back queueing failed; continuing with read-only sync this cycle");
+            }
+        }
+
         _sessions.Add(session);
 
         _log.LogInformation(
-            "QBWC session opened: ticket={Ticket}, queries queued={Count}, since={Since:O}",
-            session.Ticket, session.PendingRequests.Count, lastSync);
+            "QBWC session opened: ticket={Ticket}, queries queued={Count}, since={Since:O}, writebackEnabled={Wb}, dryRun={Dry}",
+            session.Ticket, session.PendingRequests.Count, lastSync, _writebackCustomersEnabled, _writebackDryRun);
 
         // Empty company-file string = use whatever QBWC has open. Explicit path
         // also works but locks us to one file — leave blank for portability.
@@ -117,6 +188,37 @@ public sealed class QbwcService : IQbwcService
                 session.PaymentsProcessed += result.Payments.Count;
             }
 
+            // Write-back acks. Each *AddRs comes back with the requestID we set,
+            // which we use to look up the InTime row that needs ImportFlag flipped.
+            foreach (var add in result.AddResults)
+            {
+                PendingWriteback? pending = null;
+                if (add.RequestId.HasValue)
+                    session.PendingAcks.TryGetValue(add.RequestId.Value, out pending);
+
+                if (pending is null)
+                {
+                    _log.LogWarning(
+                        "{Verb} response missing pending-ack mapping (requestID={Rid}, ok={Ok}); cannot ack InTime",
+                        add.Verb, add.RequestId, add.Ok);
+                    continue;
+                }
+
+                if (pending.Kind == "customer")
+                {
+                    var status = add.Ok ? "ok" : "qb_error";
+                    _intime.AckCustomerAsync(pending.InTimeId, add.ListId, add.FullName ?? pending.FullName, status, add.Error)
+                        .GetAwaiter().GetResult();
+                    if (add.Ok) session.CustomersAdded++;
+                    else session.CustomersFailed++;
+                    if (!add.Ok)
+                        _log.LogWarning("CustomerAdd failed for QBCustomersID={Id} ({Name}): {Err}",
+                            pending.InTimeId, pending.FullName, add.Error);
+                }
+
+                session.PendingAcks.Remove(add.RequestId!.Value);
+            }
+
             session.CompletedRequests++;
             var total = session.CompletedRequests + session.PendingRequests.Count;
             var pct = total == 0 ? 100 : (int)Math.Round(100.0 * session.CompletedRequests / total);
@@ -147,7 +249,7 @@ public sealed class QbwcService : IQbwcService
         var s = _sessions.Get(ticket);
         if (s is null) return "unknown ticket";
 
-        var summary = $"OK: {s.InvoicesUpdated} invoices, {s.PaymentsProcessed} payments synced from {s.LastSyncDate:yyyy-MM-dd} onward";
+        var summary = $"OK: {s.InvoicesUpdated} invoices, {s.PaymentsProcessed} payments, {s.CustomersAdded} customers added ({s.CustomersFailed} failed) since {s.LastSyncDate:yyyy-MM-dd}";
         _log.LogInformation("Closing session {Ticket}: {Summary}", ticket, summary);
 
         _intime.RecordSyncSummaryAsync(s).GetAwaiter().GetResult();

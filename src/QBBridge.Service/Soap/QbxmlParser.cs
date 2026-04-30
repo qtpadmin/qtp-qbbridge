@@ -28,9 +28,23 @@ public sealed record QbPaymentAppliedToInvoice(
     decimal AmountApplied,
     decimal? BalanceRemaining);
 
+/// <summary>
+/// Result of an *AddRq → *AddRs round-trip. RequestId is the qbXML requestID
+/// attribute we set when building the request; we use it to look up which
+/// InTime row to ack when the response comes back.
+/// </summary>
+public sealed record QbAddResult(
+    int? RequestId,
+    string Verb,           // "CustomerAdd" | "VendorAdd" | etc
+    bool Ok,
+    string? ListId,        // populated on Ok=true
+    string? FullName,      // populated on Ok=true
+    string? Error);        // populated on Ok=false (statusMessage)
+
 public sealed record ParseResult(
     IReadOnlyList<QbInvoice> Invoices,
-    IReadOnlyList<QbPayment> Payments);
+    IReadOnlyList<QbPayment> Payments,
+    IReadOnlyList<QbAddResult> AddResults);
 
 public sealed class QbxmlParser
 {
@@ -42,8 +56,9 @@ public sealed class QbxmlParser
     {
         var invoices = new List<QbInvoice>();
         var payments = new List<QbPayment>();
+        var adds = new List<QbAddResult>();
 
-        if (string.IsNullOrWhiteSpace(xml)) return new ParseResult(invoices, payments);
+        if (string.IsNullOrWhiteSpace(xml)) return new ParseResult(invoices, payments, adds);
 
         var doc = XDocument.Parse(xml);
 
@@ -55,7 +70,34 @@ public sealed class QbxmlParser
             foreach (var pay in payRs.Elements("ReceivePaymentRet"))
                 payments.Add(ParsePayment(pay));
 
-        return new ParseResult(invoices, payments);
+        // Write-back response parsing. Each Add response carries statusCode
+        // (0 = success), statusMessage, and (on success) the new ListID.
+        foreach (var addRs in doc.Descendants("CustomerAddRs"))
+            adds.Add(ParseAddResult(addRs, "CustomerAdd", "CustomerRet"));
+
+        foreach (var addRs in doc.Descendants("VendorAddRs"))
+            adds.Add(ParseAddResult(addRs, "VendorAdd", "VendorRet"));
+
+        return new ParseResult(invoices, payments, adds);
+    }
+
+    private static QbAddResult ParseAddResult(XElement rs, string verb, string retElementName)
+    {
+        var requestIdStr = rs.Attribute("requestID")?.Value;
+        int? requestId = int.TryParse(requestIdStr, out var rid) ? rid : null;
+
+        var statusCode = rs.Attribute("statusCode")?.Value ?? "0";
+        var statusMessage = rs.Attribute("statusMessage")?.Value;
+
+        if (statusCode == "0")
+        {
+            var ret = rs.Element(retElementName);
+            var listId = ret?.Element("ListID")?.Value;
+            var fullName = ret?.Element("FullName")?.Value ?? ret?.Element("Name")?.Value;
+            return new QbAddResult(requestId, verb, true, listId, fullName, null);
+        }
+
+        return new QbAddResult(requestId, verb, false, null, null, statusMessage ?? $"statusCode={statusCode}");
     }
 
     private static QbInvoice ParseInvoice(XElement inv)

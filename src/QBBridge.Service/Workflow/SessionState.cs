@@ -20,9 +20,19 @@ public sealed class SessionState
     public int CompletedRequests { get; set; }
     public int InvoicesUpdated { get; set; }
     public int PaymentsProcessed { get; set; }
+    public int CustomersAdded { get; set; }
+    public int CustomersFailed { get; set; }
     public string LastError { get; set; } = "";
     public DateTime? LastSyncDate { get; set; }
+
+    /// <summary>
+    /// Maps qbXML requestID → which write-back entity is being acked.
+    /// On receiveResponseXML we look up by the requestID returned in *AddRs.
+    /// </summary>
+    public Dictionary<int, PendingWriteback> PendingAcks { get; init; } = new();
 }
+
+public sealed record PendingWriteback(string Kind, int InTimeId, string? FullName);
 
 public sealed class SessionStore
 {
