@@ -24,6 +24,8 @@ public sealed class SessionState
     public int CustomersFailed { get; set; }
     public int ContractorsAdded { get; set; }
     public int ContractorsFailed { get; set; }
+    public int ClaimsAdded { get; set; }
+    public int ClaimsFailed { get; set; }
     public string LastError { get; set; } = "";
     public DateTime? LastSyncDate { get; set; }
 

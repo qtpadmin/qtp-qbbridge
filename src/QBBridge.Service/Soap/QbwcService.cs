@@ -8,14 +8,16 @@ public sealed class QbwcService : IQbwcService
     // Keeps sessions short and bounds blast radius if something goes wrong.
     private const int MaxCustomerAddsPerCycle = 100;
     private const int MaxVendorAddsPerCycle = 100;
+    private const int MaxClaimAddsPerCycle = 100;
 
     // qbXML requestID space:
     //   1-99       reserved for read queries (Invoice, ReceivePayment)
-    //   1000-1999  CustomerAdd (Phase 1)
-    //   2000-2999  VendorAdd (Phase 2)
-    //   3000-3999  reserved for sub-customer (Claim) Add (Phase 3)
+    //   1000-1999  CustomerAdd (Phase 1: top-level customers)
+    //   2000-2999  VendorAdd (Phase 2: contractors)
+    //   3000-3999  CustomerAdd with ParentRef (Phase 3: sub-customers / claim jobs)
     private const int CustomerAddBaseRequestId = 1000;
     private const int VendorAddBaseRequestId = 2000;
+    private const int SubcustomerAddBaseRequestId = 3000;
 
     private readonly SessionStore _sessions;
     private readonly QbxmlBuilder _builder;
@@ -26,6 +28,7 @@ public sealed class QbwcService : IQbwcService
     private readonly string _expectedPass;
     private readonly bool _writebackCustomersEnabled;
     private readonly bool _writebackContractorsEnabled;
+    private readonly bool _writebackClaimsEnabled;
     private readonly bool _writebackDryRun;
 
     public QbwcService(
@@ -50,6 +53,9 @@ public sealed class QbwcService : IQbwcService
             "true", StringComparison.OrdinalIgnoreCase);
         _writebackContractorsEnabled = string.Equals(
             Environment.GetEnvironmentVariable("WRITEBACK_CONTRACTORS_ENABLED"),
+            "true", StringComparison.OrdinalIgnoreCase);
+        _writebackClaimsEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("WRITEBACK_CLAIMS_ENABLED"),
             "true", StringComparison.OrdinalIgnoreCase);
         _writebackDryRun = string.Equals(
             Environment.GetEnvironmentVariable("WRITEBACK_DRY_RUN"),
@@ -182,6 +188,57 @@ public sealed class QbwcService : IQbwcService
             }
         }
 
+        // Phase 3 write-back: claims as sub-customers. Queued AFTER customers
+        // (Phase 1) so parent customers go in first within the same cycle.
+        if (_writebackClaimsEnabled)
+        {
+            try
+            {
+                var pendingClaims = _intime
+                    .GetPendingClaimsAsync(MaxClaimAddsPerCycle)
+                    .GetAwaiter().GetResult();
+
+                int requestId = SubcustomerAddBaseRequestId;
+                int queued = 0;
+                foreach (var pcl in pendingClaims)
+                {
+                    string xml;
+                    try { xml = _builder.SubcustomerAdd(pcl, requestId); }
+                    catch (Exception ex)
+                    {
+                        _log.LogWarning(ex, "SubcustomerAdd build failed for QBClaimsID={Id}; skipping", pcl.QbClaimsId);
+                        _intime.AckClaimAsync(pcl.QbClaimsId, null, pcl.ClaimName, "skipped", ex.Message)
+                            .GetAwaiter().GetResult();
+                        continue;
+                    }
+
+                    if (_writebackDryRun)
+                    {
+                        _log.LogInformation(
+                            "DRY-RUN SubcustomerAdd payload for QBClaimsID={Id} ({Parent}:{Name}):\n{Xml}",
+                            pcl.QbClaimsId, pcl.ParentCustomerName, pcl.ClaimName, xml);
+                        continue;
+                    }
+
+                    session.PendingRequests.Enqueue(xml);
+                    session.PendingAcks[requestId] = new PendingWriteback("claim", pcl.QbClaimsId, pcl.ClaimName);
+                    requestId++;
+                    queued++;
+                }
+
+                if (queued > 0)
+                    _log.LogInformation("Phase 3 write-back: queued {N} SubcustomerAdd requests", queued);
+                else if (_writebackDryRun)
+                    _log.LogInformation("Phase 3 write-back: DRY-RUN, {N} payloads logged", pendingClaims.Count);
+                else
+                    _log.LogInformation("Phase 3 write-back: no pending claims");
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Phase 3 write-back queueing failed; continuing");
+            }
+        }
+
         _sessions.Add(session);
 
         _log.LogInformation(
@@ -286,6 +343,17 @@ public sealed class QbwcService : IQbwcService
                         _log.LogWarning("VendorAdd failed for QBContractorsID={Id} ({Name}): {Err}",
                             pending.InTimeId, pending.FullName, add.Error);
                 }
+                else if (pending.Kind == "claim")
+                {
+                    var status = add.Ok ? "ok" : "qb_error";
+                    _intime.AckClaimAsync(pending.InTimeId, add.ListId, add.FullName ?? pending.FullName, status, add.Error)
+                        .GetAwaiter().GetResult();
+                    if (add.Ok) session.ClaimsAdded++;
+                    else session.ClaimsFailed++;
+                    if (!add.Ok)
+                        _log.LogWarning("SubcustomerAdd failed for QBClaimsID={Id} ({Name}): {Err}",
+                            pending.InTimeId, pending.FullName, add.Error);
+                }
 
                 session.PendingAcks.Remove(add.RequestId!.Value);
             }
@@ -320,7 +388,10 @@ public sealed class QbwcService : IQbwcService
         var s = _sessions.Get(ticket);
         if (s is null) return "unknown ticket";
 
-        var summary = $"OK: {s.InvoicesUpdated} invoices, {s.PaymentsProcessed} payments, {s.CustomersAdded} customers added ({s.CustomersFailed} failed), {s.ContractorsAdded} contractors added ({s.ContractorsFailed} failed) since {s.LastSyncDate:yyyy-MM-dd}";
+        var summary = $"OK: {s.InvoicesUpdated} invoices, {s.PaymentsProcessed} payments, " +
+                      $"{s.CustomersAdded}/{s.CustomersFailed} customers (added/failed), " +
+                      $"{s.ContractorsAdded}/{s.ContractorsFailed} contractors, " +
+                      $"{s.ClaimsAdded}/{s.ClaimsFailed} claims since {s.LastSyncDate:yyyy-MM-dd}";
         _log.LogInformation("Closing session {Ticket}: {Summary}", ticket, summary);
 
         _intime.RecordSyncSummaryAsync(s).GetAwaiter().GetResult();

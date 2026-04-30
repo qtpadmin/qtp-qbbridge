@@ -160,9 +160,48 @@ public sealed class IntimeApiClient
         }
     }
 
+    // Phase 3: claims → QB sub-customers
+
+    public async Task<IReadOnlyList<PendingClaim>> GetPendingClaimsAsync(int limit = 50)
+    {
+        try
+        {
+            var resp = await _http.GetFromJsonAsync<PendingClaimsResponse>(
+                $"api/qb-payment-sync/pending/claims?limit={limit}");
+            return resp?.Claims ?? new List<PendingClaim>();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to fetch pending claims — skipping claim writeback this cycle");
+            return new List<PendingClaim>();
+        }
+    }
+
+    public async Task AckClaimAsync(int qbClaimsId, string? listId, string? name, string status, string? error)
+    {
+        var payload = new
+        {
+            qbClaimsId,
+            qbListId = listId,
+            qbName = name,
+            status,
+            error,
+        };
+        try
+        {
+            var resp = await _http.PostAsJsonAsync("api/qb-payment-sync/ack/claim", payload);
+            resp.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "ack/claim failed for QBClaimsID={Id}", qbClaimsId);
+        }
+    }
+
     private sealed record LastSyncResponse(DateTime? LastSync);
     private sealed record PendingCustomersResponse(List<PendingCustomer> Customers);
     private sealed record PendingContractorsResponse(List<PendingContractor> Contractors);
+    private sealed record PendingClaimsResponse(List<PendingClaim> Claims);
 }
 
 /// <summary>
@@ -196,6 +235,20 @@ public sealed record PendingCustomer(
 /// when populated and fall back to physical, since QB Vendors take only one
 /// VendorAddress block.
 /// </summary>
+/// <summary>
+/// Mirrors GET /api/qb-payment-sync/pending/claims. Each row represents a
+/// QB sub-customer (Job) — added to QB as a Customer with a ParentRef.
+/// ParentCustomerName is pre-resolved by the backend from
+/// Customers.CustomerIntfID (the canonical QB FullName).
+/// </summary>
+public sealed record PendingClaim(
+    int QbClaimsId,
+    int? ClaimId,
+    string? ClaimName,
+    string? ParentCustomerName,
+    string? ClaimNumber,
+    DateTime? LastChangeDate);
+
 public sealed record PendingContractor(
     int QbContractorsId,
     int? ContractorId,

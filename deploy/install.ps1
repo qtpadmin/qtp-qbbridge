@@ -211,6 +211,7 @@ Write-Stage 'Set machine-level environment variables'
 # Write-back toggles. Default: disabled. Flip via Set Machine env on J-DC2 then restart QTPQBBridge service.
 #   WRITEBACK_CUSTOMERS_ENABLED=true     → bridge fetches QBCustomers WHERE ImportFlag=0 and pushes via CustomerAddRq
 #   WRITEBACK_CONTRACTORS_ENABLED=true   → bridge fetches QBContractors WHERE ImportFlag=0 and pushes via VendorAddRq
+#   WRITEBACK_CLAIMS_ENABLED=true        → bridge fetches QBClaims WHERE ImportFlag=0 and pushes via CustomerAddRq w/ ParentRef
 #   WRITEBACK_DRY_RUN=true               → log qbXML payload but skip queueing (safe first-cycle preview, applies to all phases)
 if (-not [Environment]::GetEnvironmentVariable('WRITEBACK_CUSTOMERS_ENABLED', 'Machine')) {
     [Environment]::SetEnvironmentVariable('WRITEBACK_CUSTOMERS_ENABLED', 'false', 'Machine')
@@ -218,10 +219,13 @@ if (-not [Environment]::GetEnvironmentVariable('WRITEBACK_CUSTOMERS_ENABLED', 'M
 if (-not [Environment]::GetEnvironmentVariable('WRITEBACK_CONTRACTORS_ENABLED', 'Machine')) {
     [Environment]::SetEnvironmentVariable('WRITEBACK_CONTRACTORS_ENABLED', 'false', 'Machine')
 }
+if (-not [Environment]::GetEnvironmentVariable('WRITEBACK_CLAIMS_ENABLED', 'Machine')) {
+    [Environment]::SetEnvironmentVariable('WRITEBACK_CLAIMS_ENABLED', 'false', 'Machine')
+}
 if (-not [Environment]::GetEnvironmentVariable('WRITEBACK_DRY_RUN', 'Machine')) {
     [Environment]::SetEnvironmentVariable('WRITEBACK_DRY_RUN', 'false', 'Machine')
 }
-Write-Ok 'Env vars set (9: 6 existing + 3 write-back toggles, default off)'
+Write-Ok 'Env vars set (10: 6 existing + 4 write-back toggles, default off)'
 
 # ─────────────────────────────────────────────────────────────
 # 5. Create / update the Windows service

@@ -216,6 +216,51 @@ public sealed class QbxmlBuilder
         return Wrap(sb.ToString().TrimEnd());
     }
 
+    /// <summary>
+    /// CustomerAdd qbXML for a QB sub-customer / Job (Phase 3: QBClaims → QB
+    /// Customer-with-ParentRef). QB treats sub-customers and Jobs identically;
+    /// they're just Customer records whose ParentRef points at another Customer.
+    ///
+    /// The parent customer must exist in QB before this Add succeeds. If the
+    /// parent name doesn't resolve in QB, CustomerAddRs returns statusCode 3120
+    /// "Object … of … specified in the request cannot be found", we capture the
+    /// error message, leave ImportFlag=0 on the InTime row, and the claim
+    /// retries next cycle (presumably after the parent has been added).
+    ///
+    /// requestID range: 3000-3999 for claim Adds (separate from 1000-1999
+    /// customer Adds and 2000-2999 vendor Adds). When customers and claims
+    /// are both queued in the same cycle, customers run first because their
+    /// requests sit at the front of session.PendingRequests.
+    /// </summary>
+    public string SubcustomerAdd(PendingClaim claim, int requestId)
+    {
+        var name = Truncate(claim.ClaimName, 41);
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException(
+                $"QBClaims.ClaimIntfID is null/empty for QBClaimsID={claim.QbClaimsId}; cannot build SubcustomerAdd");
+        if (string.IsNullOrWhiteSpace(claim.ParentCustomerName))
+            throw new InvalidOperationException(
+                $"PendingClaim.ParentCustomerName is null/empty for QBClaimsID={claim.QbClaimsId}; backend join did not resolve a parent");
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"<CustomerAddRq requestID=\"{requestId}\">");
+        sb.AppendLine("  <CustomerAdd>");
+        sb.AppendLine($"    <Name>{X(name)}</Name>");
+        sb.AppendLine("    <ParentRef>");
+        sb.AppendLine($"      <FullName>{X(claim.ParentCustomerName)}</FullName>");
+        sb.AppendLine("    </ParentRef>");
+
+        // ClaimNumber goes into JobDesc — useful in QB for searching by claim
+        // and matches what Janet's IIF imports have been populating historically.
+        if (!string.IsNullOrWhiteSpace(claim.ClaimNumber))
+            sb.AppendLine($"    <JobDesc>{X(Truncate(claim.ClaimNumber, 99))}</JobDesc>");
+
+        sb.AppendLine("  </CustomerAdd>");
+        sb.AppendLine("</CustomerAddRq>");
+
+        return Wrap(sb.ToString().TrimEnd());
+    }
+
     private static string X(string? s) => SecurityElement.Escape(s ?? "") ?? "";
 
     private static string? Truncate(string? s, int max) =>
