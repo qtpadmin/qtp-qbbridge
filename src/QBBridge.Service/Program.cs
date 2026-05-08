@@ -40,6 +40,11 @@ try
     // 8444 → REST (InTime over Tailscale), bound to all interfaces with HTTPS
     builder.WebHost.ConfigureKestrel(options =>
     {
+        // QBWC backfill responses (years of invoices in one InvoiceQueryRs) can
+        // exceed Kestrel's 30 MB default. Raise to 500 MB so cursor-reset
+        // backfill works in one shot. 8443 is loopback + bearer-auth gated.
+        options.Limits.MaxRequestBodySize = 500_000_000;
+
         options.ListenLocalhost(8443, o =>
         {
             o.Protocols = HttpProtocols.Http1;
