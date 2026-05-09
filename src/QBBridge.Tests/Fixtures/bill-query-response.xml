@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRs>
+    <BillQueryRs requestID="3" statusCode="0" statusSeverity="Info" statusMessage="Status OK">
+      <BillRet>
+        <TxnID>BILL0001-1700000000</TxnID>
+        <TimeCreated>2025-10-01T09:15:22-05:00</TimeCreated>
+        <TimeModified>2025-10-15T12:49:23-05:00</TimeModified>
+        <EditSequence>1700000000</EditSequence>
+        <TxnNumber>22345</TxnNumber>
+        <VendorRef>
+          <ListID>90000001-1600000000</ListID>
+          <FullName>Acme Transport LLC</FullName>
+        </VendorRef>
+        <TxnDate>2025-10-01</TxnDate>
+        <RefNumber>1037</RefNumber>
+        <DueDate>2025-10-31</DueDate>
+        <AmountDue>288.00</AmountDue>
+        <OpenAmount>0.00</OpenAmount>
+        <IsPaid>true</IsPaid>
+      </BillRet>
+      <BillRet>
+        <TxnID>BILL0002-1700000001</TxnID>
+        <TimeCreated>2025-10-01T09:18:05-05:00</TimeCreated>
+        <TimeModified>2025-10-01T09:18:05-05:00</TimeModified>
+        <EditSequence>1700000001</EditSequence>
+        <TxnNumber>22346</TxnNumber>
+        <VendorRef>
+          <ListID>90000002-1600000000</ListID>
+          <FullName>Pinnacle Drivers Inc</FullName>
+        </VendorRef>
+        <TxnDate>2025-10-01</TxnDate>
+        <RefNumber>1880</RefNumber>
+        <DueDate>2025-10-31</DueDate>
+        <AmountDue>402.00</AmountDue>
+        <OpenAmount>402.00</OpenAmount>
+        <IsPaid>false</IsPaid>
+      </BillRet>
+      <BillRet>
+        <TxnID>BILL0003-1700000002</TxnID>
+        <TimeCreated>2025-10-01T10:00:00-05:00</TimeCreated>
+        <TimeModified>2025-10-01T10:00:00-05:00</TimeModified>
+        <VendorRef>
+          <FullName>Cypress Mobility Group</FullName>
+        </VendorRef>
+        <TxnDate>2025-10-01</TxnDate>
+        <RefNumber>20260124</RefNumber>
+        <AmountDue>3915.00</AmountDue>
+        <IsPaid>false</IsPaid>
+      </BillRet>
+    </BillQueryRs>
+  </QBXMLMsgsRs>
+</QBXML>

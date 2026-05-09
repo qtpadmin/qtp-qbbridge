@@ -174,4 +174,126 @@ public sealed class QbxmlParserTests
         var r = _parser.ParseResponse(xml);
         Assert.Equal(expected, r.Invoices[0].IsPaid);
     }
+
+    // ─── Bills (contractor-pay side, mirror of Invoice tests) ───────────────
+
+    [Fact]
+    public void ParseResponse_BillFixture_ExtractsAllRows()
+    {
+        var r = _parser.ParseResponse(LoadFixture("bill-query-response.xml"));
+        Assert.Equal(3, r.Bills.Count);
+        Assert.Empty(r.Invoices);
+        Assert.Empty(r.Payments);
+        Assert.Empty(r.BillPayments);
+    }
+
+    [Fact]
+    public void ParseResponse_BillFixture_FirstRow_FullyPopulated()
+    {
+        var r = _parser.ParseResponse(LoadFixture("bill-query-response.xml"));
+        var first = r.Bills[0];
+
+        Assert.Equal("1037", first.RefNumber);
+        Assert.Equal("BILL0001-1700000000", first.TxnID);
+        Assert.Equal(new DateTime(2025, 10, 1), first.TxnDate!.Value.Date);
+        Assert.Equal("Acme Transport LLC", first.VendorFullName);
+        Assert.Equal(288.00m, first.AmountDue);
+        Assert.Equal(0m, first.OpenAmount);
+        Assert.True(first.IsPaid);
+        Assert.NotNull(first.ModifiedAt);
+    }
+
+    [Fact]
+    public void ParseResponse_BillFixture_UnpaidRow_HasCorrectOpenAmount()
+    {
+        var r = _parser.ParseResponse(LoadFixture("bill-query-response.xml"));
+        var unpaid = r.Bills.Single(b => b.RefNumber == "1880");
+
+        Assert.False(unpaid.IsPaid);
+        Assert.Equal(402m, unpaid.AmountDue);
+        Assert.Equal(402m, unpaid.OpenAmount);
+    }
+
+    [Fact]
+    public void ParseResponse_BillFixture_MissingOptionalFields_ToleratedAsNull()
+    {
+        var r = _parser.ParseResponse(LoadFixture("bill-query-response.xml"));
+        var partial = r.Bills.Single(b => b.RefNumber == "20260124");
+
+        Assert.Equal("Cypress Mobility Group", partial.VendorFullName);
+        Assert.Equal(3915m, partial.AmountDue);
+        Assert.Null(partial.OpenAmount);
+        Assert.False(partial.IsPaid);
+    }
+
+    [Fact]
+    public void ParseResponse_BillPaymentCheckFixture_ExtractsAllRows()
+    {
+        var r = _parser.ParseResponse(LoadFixture("bill-payment-check-query-response.xml"));
+        Assert.Equal(2, r.BillPayments.Count);
+        Assert.Empty(r.Bills);
+    }
+
+    [Fact]
+    public void ParseResponse_BillPaymentCheckFixture_TagsPaymentMethodAsCheck()
+    {
+        var r = _parser.ParseResponse(LoadFixture("bill-payment-check-query-response.xml"));
+        Assert.All(r.BillPayments, bp => Assert.Equal("check", bp.PaymentMethod));
+    }
+
+    [Fact]
+    public void ParseResponse_BillPaymentCheckFixture_AppliedLines_ArePreserved()
+    {
+        var r = _parser.ParseResponse(LoadFixture("bill-payment-check-query-response.xml"));
+        var full = r.BillPayments[0];
+
+        Assert.Equal("BPC00001-1700100000", full.TxnID);
+        Assert.Equal("Acme Transport LLC", full.VendorFullName);
+        Assert.Equal(288.00m, full.Amount);
+        Assert.Single(full.AppliedTo);
+
+        var line = full.AppliedTo[0];
+        Assert.Equal("1037", line.BillRefNumber);
+        Assert.Equal(288.00m, line.AmountApplied);
+        Assert.Equal(0m, line.OpenAmountAfter);
+    }
+
+    [Fact]
+    public void ParseResponse_BillPaymentCheckFixture_PartialPayment_ReflectsRemainingOpenAmount()
+    {
+        var r = _parser.ParseResponse(LoadFixture("bill-payment-check-query-response.xml"));
+        var partial = r.BillPayments.Single(bp => bp.TxnID == "BPC00002-1700100001");
+
+        Assert.Single(partial.AppliedTo);
+        var line = partial.AppliedTo[0];
+        Assert.Equal("20260124", line.BillRefNumber);
+        Assert.Equal(2000m, line.AmountApplied);
+        Assert.Equal(1915m, line.OpenAmountAfter);  // bill still has 1915 outstanding
+    }
+
+    [Fact]
+    public void ParseResponse_BillPaymentCreditCard_TagsPaymentMethodAsCreditcard()
+    {
+        // Synthetic minimal CC payment — schema mirrors check variant.
+        var xml = @"<?xml version=""1.0""?>
+<QBXML><QBXMLMsgsRs><BillPaymentCreditCardQueryRs>
+  <BillPaymentCreditCardRet>
+    <TxnID>BPCC00001-1700200000</TxnID>
+    <TxnDate>2025-10-25</TxnDate>
+    <PayeeEntityRef><FullName>Pinnacle Drivers Inc</FullName></PayeeEntityRef>
+    <Amount>402.00</Amount>
+    <AppliedToTxnRet>
+      <RefNumber>1880</RefNumber>
+      <Amount>402.00</Amount>
+      <OpenAmount>0.00</OpenAmount>
+    </AppliedToTxnRet>
+  </BillPaymentCreditCardRet>
+</BillPaymentCreditCardQueryRs></QBXMLMsgsRs></QBXML>";
+
+        var r = _parser.ParseResponse(xml);
+        Assert.Single(r.BillPayments);
+        Assert.Equal("creditcard", r.BillPayments[0].PaymentMethod);
+        Assert.Equal("Pinnacle Drivers Inc", r.BillPayments[0].VendorFullName);
+        Assert.Equal(402m, r.BillPayments[0].Amount);
+    }
 }

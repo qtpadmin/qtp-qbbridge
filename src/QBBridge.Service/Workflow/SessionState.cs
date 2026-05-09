@@ -20,6 +20,8 @@ public sealed class SessionState
     public int CompletedRequests { get; set; }
     public int InvoicesUpdated { get; set; }
     public int PaymentsProcessed { get; set; }
+    public int BillsUpdated { get; set; }
+    public int BillPaymentsProcessed { get; set; }
     public int CustomersAdded { get; set; }
     public int CustomersFailed { get; set; }
     public int ContractorsAdded { get; set; }

@@ -87,4 +87,69 @@ public sealed class QbxmlBuilderTests
         Assert.Contains("2025-06-15T14:30:45", xml);
         Assert.DoesNotContain("Z", xml.Split('\n').First(l => l.Contains("FromModifiedDate")));
     }
+
+    // ─── Bills (contractor-pay side) ───────────────────────────────────────
+
+    [Fact]
+    public void BillQuery_ProducesValidXml()
+    {
+        var xml = _b.BillQuery(new DateTime(2025, 10, 1, 0, 0, 0, DateTimeKind.Utc));
+        var doc = XDocument.Parse(xml);
+        Assert.NotNull(doc.Descendants("BillQueryRq").FirstOrDefault());
+    }
+
+    [Fact]
+    public void BillQuery_IncludesModifiedDateFilter()
+    {
+        var since = new DateTime(2025, 10, 1, 8, 30, 0, DateTimeKind.Utc);
+        var xml = _b.BillQuery(since);
+        var doc = XDocument.Parse(xml);
+
+        var filter = doc.Descendants("FromModifiedDate").FirstOrDefault();
+        Assert.NotNull(filter);
+        Assert.Contains("2025-10-01", filter!.Value);
+    }
+
+    [Fact]
+    public void BillQuery_ExcludesLineItems_ToKeepResponseSmall()
+    {
+        var xml = _b.BillQuery(DateTime.UtcNow);
+        var doc = XDocument.Parse(xml);
+        var el = doc.Descendants("IncludeLineItems").FirstOrDefault();
+        Assert.NotNull(el);
+        Assert.Equal("false", el!.Value);
+    }
+
+    [Fact]
+    public void BillPaymentCheckQuery_IncludesLineItems()
+    {
+        var xml = _b.BillPaymentCheckQuery(DateTime.UtcNow);
+        var doc = XDocument.Parse(xml);
+        var el = doc.Descendants("IncludeLineItems").FirstOrDefault();
+        Assert.NotNull(el);
+        Assert.Equal("true", el!.Value);
+    }
+
+    [Fact]
+    public void BillPaymentCreditCardQuery_IncludesLineItems()
+    {
+        var xml = _b.BillPaymentCreditCardQuery(DateTime.UtcNow);
+        var doc = XDocument.Parse(xml);
+        var el = doc.Descendants("IncludeLineItems").FirstOrDefault();
+        Assert.NotNull(el);
+        Assert.Equal("true", el!.Value);
+    }
+
+    [Fact]
+    public void BillQueries_HaveDistinctRequestIds()
+    {
+        // Bridge expects request IDs 1-99 for read queries; bills use 3,4,5.
+        var billXml = _b.BillQuery(DateTime.UtcNow);
+        var checkXml = _b.BillPaymentCheckQuery(DateTime.UtcNow);
+        var ccXml = _b.BillPaymentCreditCardQuery(DateTime.UtcNow);
+
+        Assert.Contains("requestID=\"3\"", billXml);
+        Assert.Contains("requestID=\"4\"", checkXml);
+        Assert.Contains("requestID=\"5\"", ccXml);
+    }
 }

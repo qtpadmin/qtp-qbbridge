@@ -29,6 +29,42 @@ public sealed record QbPaymentAppliedToInvoice(
     decimal? BalanceRemaining);
 
 /// <summary>
+/// QB Bill record (the contractor-pay side, mirror of QbInvoice).
+/// RefNumber maps to QBBills.ReferenceNum on the InTime side.
+/// AmountDue is the original total; OpenAmount is what's still unpaid (set
+/// by QB after partial bill payments). IsPaid mirrors QB's IsPaid flag.
+/// </summary>
+public sealed record QbBill(
+    string RefNumber,
+    string? TxnID,
+    DateTime? TxnDate,
+    string? VendorFullName,
+    decimal? AmountDue,
+    decimal? OpenAmount,
+    bool IsPaid,
+    DateTime? ModifiedAt);
+
+/// <summary>
+/// QB BillPayment (check or credit-card variant — both schemas share the
+/// same shape for our purposes). Applied lines tell us which bills got paid
+/// and by how much; we use that to update QBBills.QBPaidAmount + QBBalance
+/// on the InTime side.
+/// </summary>
+public sealed record QbBillPayment(
+    string? TxnID,
+    DateTime? TxnDate,
+    string? VendorFullName,
+    decimal? Amount,
+    string PaymentMethod,  // "check" | "creditcard"
+    IReadOnlyList<QbBillPaymentAppliedToBill> AppliedTo);
+
+public sealed record QbBillPaymentAppliedToBill(
+    string BillRefNumber,
+    string? BillTxnID,
+    decimal AmountApplied,
+    decimal? OpenAmountAfter);
+
+/// <summary>
 /// Result of an *AddRq → *AddRs round-trip. RequestId is the qbXML requestID
 /// attribute we set when building the request; we use it to look up which
 /// InTime row to ack when the response comes back.
@@ -44,6 +80,8 @@ public sealed record QbAddResult(
 public sealed record ParseResult(
     IReadOnlyList<QbInvoice> Invoices,
     IReadOnlyList<QbPayment> Payments,
+    IReadOnlyList<QbBill> Bills,
+    IReadOnlyList<QbBillPayment> BillPayments,
     IReadOnlyList<QbAddResult> AddResults);
 
 public sealed class QbxmlParser
@@ -56,9 +94,11 @@ public sealed class QbxmlParser
     {
         var invoices = new List<QbInvoice>();
         var payments = new List<QbPayment>();
+        var bills = new List<QbBill>();
+        var billPayments = new List<QbBillPayment>();
         var adds = new List<QbAddResult>();
 
-        if (string.IsNullOrWhiteSpace(xml)) return new ParseResult(invoices, payments, adds);
+        if (string.IsNullOrWhiteSpace(xml)) return new ParseResult(invoices, payments, bills, billPayments, adds);
 
         var doc = XDocument.Parse(xml);
 
@@ -70,6 +110,21 @@ public sealed class QbxmlParser
             foreach (var pay in payRs.Elements("ReceivePaymentRet"))
                 payments.Add(ParsePayment(pay));
 
+        foreach (var billRs in doc.Descendants("BillQueryRs"))
+            foreach (var bill in billRs.Elements("BillRet"))
+                bills.Add(ParseBill(bill));
+
+        // Bill payments come in two flavors in qbXML — by check and by credit card.
+        // Schemas share the fields we care about; we tag PaymentMethod for traceability
+        // but otherwise treat them identically downstream.
+        foreach (var bpRs in doc.Descendants("BillPaymentCheckQueryRs"))
+            foreach (var bp in bpRs.Elements("BillPaymentCheckRet"))
+                billPayments.Add(ParseBillPayment(bp, "check"));
+
+        foreach (var bpRs in doc.Descendants("BillPaymentCreditCardQueryRs"))
+            foreach (var bp in bpRs.Elements("BillPaymentCreditCardRet"))
+                billPayments.Add(ParseBillPayment(bp, "creditcard"));
+
         // Write-back response parsing. Each Add response carries statusCode
         // (0 = success), statusMessage, and (on success) the new ListID.
         foreach (var addRs in doc.Descendants("CustomerAddRs"))
@@ -78,7 +133,7 @@ public sealed class QbxmlParser
         foreach (var addRs in doc.Descendants("VendorAddRs"))
             adds.Add(ParseAddResult(addRs, "VendorAdd", "VendorRet"));
 
-        return new ParseResult(invoices, payments, adds);
+        return new ParseResult(invoices, payments, bills, billPayments, adds);
     }
 
     private static QbAddResult ParseAddResult(XElement rs, string verb, string retElementName)
@@ -135,6 +190,42 @@ public sealed class QbxmlParser
         }
 
         return new QbPayment(txnId, txnDate, customer, total, unused, applied);
+    }
+
+    private static QbBill ParseBill(XElement bill)
+    {
+        var ref_ = bill.Element("RefNumber")?.Value ?? "";
+        var txnId = bill.Element("TxnID")?.Value;
+        var txnDate = ParseDate(bill.Element("TxnDate")?.Value);
+        var modifiedAt = ParseDateTime(bill.Element("TimeModified")?.Value);
+        var vendor = bill.Element("VendorRef")?.Element("FullName")?.Value;
+        var amountDue = ParseDec(bill.Element("AmountDue")?.Value);
+        var openAmount = ParseDec(bill.Element("OpenAmount")?.Value);
+        var isPaidRaw = bill.Element("IsPaid")?.Value;
+        var isPaid = isPaidRaw is not null && string.Equals(isPaidRaw, "true", StringComparison.OrdinalIgnoreCase);
+
+        return new QbBill(ref_, txnId, txnDate, vendor, amountDue, openAmount, isPaid, modifiedAt);
+    }
+
+    private static QbBillPayment ParseBillPayment(XElement bp, string method)
+    {
+        var txnId = bp.Element("TxnID")?.Value;
+        var txnDate = ParseDate(bp.Element("TxnDate")?.Value);
+        var vendor = bp.Element("PayeeEntityRef")?.Element("FullName")?.Value
+                     ?? bp.Element("VendorRef")?.Element("FullName")?.Value;
+        var amount = ParseDec(bp.Element("Amount")?.Value);
+
+        var applied = new List<QbBillPaymentAppliedToBill>();
+        foreach (var line in bp.Elements("AppliedToTxnRet"))
+        {
+            var billRef = line.Element("RefNumber")?.Value ?? "";
+            var billTxnId = line.Element("TxnID")?.Value;
+            var amt = ParseDec(line.Element("Amount")?.Value) ?? 0m;
+            var open = ParseDec(line.Element("OpenAmount")?.Value);
+            applied.Add(new QbBillPaymentAppliedToBill(billRef, billTxnId, amt, open));
+        }
+
+        return new QbBillPayment(txnId, txnDate, vendor, amount, method, applied);
     }
 
     private static DateTime? ParseDate(string? s) =>

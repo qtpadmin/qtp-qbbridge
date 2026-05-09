@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRs>
+    <BillPaymentCheckQueryRs requestID="4" statusCode="0" statusSeverity="Info" statusMessage="Status OK">
+      <BillPaymentCheckRet>
+        <TxnID>BPC00001-1700100000</TxnID>
+        <TimeCreated>2025-10-15T09:00:00-05:00</TimeCreated>
+        <TimeModified>2025-10-15T09:00:00-05:00</TimeModified>
+        <TxnNumber>33001</TxnNumber>
+        <PayeeEntityRef>
+          <ListID>90000001-1600000000</ListID>
+          <FullName>Acme Transport LLC</FullName>
+        </PayeeEntityRef>
+        <APAccountRef>
+          <FullName>Accounts Payable</FullName>
+        </APAccountRef>
+        <TxnDate>2025-10-15</TxnDate>
+        <BankAccountRef>
+          <FullName>Operating Checking</FullName>
+        </BankAccountRef>
+        <Amount>288.00</Amount>
+        <AppliedToTxnRet>
+          <TxnID>BILL0001-1700000000</TxnID>
+          <TxnType>Bill</TxnType>
+          <TxnDate>2025-10-01</TxnDate>
+          <RefNumber>1037</RefNumber>
+          <Amount>288.00</Amount>
+          <OpenAmount>0.00</OpenAmount>
+        </AppliedToTxnRet>
+      </BillPaymentCheckRet>
+      <BillPaymentCheckRet>
+        <TxnID>BPC00002-1700100001</TxnID>
+        <TimeCreated>2025-10-20T11:30:00-05:00</TimeCreated>
+        <TimeModified>2025-10-20T11:30:00-05:00</TimeModified>
+        <TxnNumber>33002</TxnNumber>
+        <PayeeEntityRef>
+          <ListID>90000003-1600000000</ListID>
+          <FullName>Cypress Mobility Group</FullName>
+        </PayeeEntityRef>
+        <TxnDate>2025-10-20</TxnDate>
+        <Amount>2000.00</Amount>
+        <AppliedToTxnRet>
+          <TxnID>BILL0003-1700000002</TxnID>
+          <TxnType>Bill</TxnType>
+          <RefNumber>20260124</RefNumber>
+          <Amount>2000.00</Amount>
+          <OpenAmount>1915.00</OpenAmount>
+        </AppliedToTxnRet>
+      </BillPaymentCheckRet>
+    </BillPaymentCheckQueryRs>
+  </QBXMLMsgsRs>
+</QBXML>

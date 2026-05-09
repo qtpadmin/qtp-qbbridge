@@ -76,10 +76,16 @@ public sealed class QbwcService : IQbwcService
         };
 
         // Queue up the reads we want QBWC to run this cycle.
-        // v1: Invoice + ReceivePayment since last known sync date (from InTime state).
+        // v2 (Bills phase): Invoice + ReceivePayment + Bill + BillPaymentCheck +
+        // BillPaymentCreditCard since last known sync date (from InTime state).
+        // The single cursor is conservative — both invoice-side and bill-side
+        // updates since last cycle get pulled in one pass.
         var lastSync = _intime.GetLastSyncDateAsync().GetAwaiter().GetResult() ?? DateTime.UtcNow.AddDays(-30);
         session.PendingRequests.Enqueue(_builder.InvoiceQuery(lastSync));
         session.PendingRequests.Enqueue(_builder.ReceivePaymentQuery(lastSync));
+        session.PendingRequests.Enqueue(_builder.BillQuery(lastSync));
+        session.PendingRequests.Enqueue(_builder.BillPaymentCheckQuery(lastSync));
+        session.PendingRequests.Enqueue(_builder.BillPaymentCreditCardQuery(lastSync));
         session.LastSyncDate = lastSync;
 
         // Phase 1 write-back: queue CustomerAdd requests for any pending QBCustomers rows.
@@ -304,6 +310,16 @@ public sealed class QbwcService : IQbwcService
                 _intime.PostPaymentsAsync(result.Payments).GetAwaiter().GetResult();
                 session.PaymentsProcessed += result.Payments.Count;
             }
+            if (result.Bills.Count > 0)
+            {
+                _intime.PostBillsAsync(result.Bills).GetAwaiter().GetResult();
+                session.BillsUpdated += result.Bills.Count;
+            }
+            if (result.BillPayments.Count > 0)
+            {
+                _intime.PostBillPaymentsAsync(result.BillPayments).GetAwaiter().GetResult();
+                session.BillPaymentsProcessed += result.BillPayments.Count;
+            }
 
             // Write-back acks. Each *AddRs comes back with the requestID we set,
             // which we use to look up the InTime row that needs ImportFlag flipped.
@@ -389,6 +405,7 @@ public sealed class QbwcService : IQbwcService
         if (s is null) return "unknown ticket";
 
         var summary = $"OK: {s.InvoicesUpdated} invoices, {s.PaymentsProcessed} payments, " +
+                      $"{s.BillsUpdated} bills, {s.BillPaymentsProcessed} bill-payments, " +
                       $"{s.CustomersAdded}/{s.CustomersFailed} customers (added/failed), " +
                       $"{s.ContractorsAdded}/{s.ContractorsFailed} contractors, " +
                       $"{s.ClaimsAdded}/{s.ClaimsFailed} claims since {s.LastSyncDate:yyyy-MM-dd}";

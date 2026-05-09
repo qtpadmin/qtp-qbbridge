@@ -64,6 +64,59 @@ public sealed class QbxmlBuilder
     }
 
     /// <summary>
+    /// BillQuery — contractor-pay side mirror of InvoiceQuery. Pulls bill
+    /// number, date, vendor, AmountDue, OpenAmount (what's still unpaid),
+    /// IsPaid flag.
+    /// </summary>
+    public string BillQuery(DateTime sinceUtc)
+    {
+        return Wrap($"""
+            <BillQueryRq requestID="3">
+              <ModifiedDateRangeFilter>
+                <FromModifiedDate>{Iso(sinceUtc)}</FromModifiedDate>
+              </ModifiedDateRangeFilter>
+              <IncludeLineItems>false</IncludeLineItems>
+              <IncludeLinkedTxns>false</IncludeLinkedTxns>
+              <OwnerID>0</OwnerID>
+            </BillQueryRq>
+            """);
+    }
+
+    /// <summary>
+    /// BillPaymentCheckQuery since given timestamp. JNJ pays contractors
+    /// predominantly by check; this is the primary bill-payment source.
+    /// </summary>
+    public string BillPaymentCheckQuery(DateTime sinceUtc)
+    {
+        return Wrap($"""
+            <BillPaymentCheckQueryRq requestID="4">
+              <ModifiedDateRangeFilter>
+                <FromModifiedDate>{Iso(sinceUtc)}</FromModifiedDate>
+              </ModifiedDateRangeFilter>
+              <IncludeLineItems>true</IncludeLineItems>
+            </BillPaymentCheckQueryRq>
+            """);
+    }
+
+    /// <summary>
+    /// BillPaymentCreditCardQuery since given timestamp. Covers the case where
+    /// JNJ has paid a contractor via QB credit-card transaction. Same shape as
+    /// BillPaymentCheck for our purposes; downstream we tag PaymentMethod for
+    /// audit-trail visibility but otherwise treat them identically.
+    /// </summary>
+    public string BillPaymentCreditCardQuery(DateTime sinceUtc)
+    {
+        return Wrap($"""
+            <BillPaymentCreditCardQueryRq requestID="5">
+              <ModifiedDateRangeFilter>
+                <FromModifiedDate>{Iso(sinceUtc)}</FromModifiedDate>
+              </ModifiedDateRangeFilter>
+              <IncludeLineItems>true</IncludeLineItems>
+            </BillPaymentCreditCardQueryRq>
+            """);
+    }
+
+    /// <summary>
     /// CustomerAdd qbXML for a top-level QB Customer record.
     ///
     /// Maps QBCustomers row → QB CustomerAdd. Mirrors the IIF column layout

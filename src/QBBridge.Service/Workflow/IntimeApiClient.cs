@@ -59,6 +59,22 @@ public sealed class IntimeApiClient
         _log.LogInformation("Posted {N} payments to InTime", payments.Count);
     }
 
+    public async Task PostBillsAsync(IReadOnlyList<QbBill> bills)
+    {
+        var payload = new { source = "qbwc-bridge", bills };
+        var resp = await _http.PostAsJsonAsync("api/qb-payment-sync/ingest/bills", payload);
+        resp.EnsureSuccessStatusCode();
+        _log.LogInformation("Posted {N} bills to InTime", bills.Count);
+    }
+
+    public async Task PostBillPaymentsAsync(IReadOnlyList<QbBillPayment> billPayments)
+    {
+        var payload = new { source = "qbwc-bridge", billPayments };
+        var resp = await _http.PostAsJsonAsync("api/qb-payment-sync/ingest/bill-payments", payload);
+        resp.EnsureSuccessStatusCode();
+        _log.LogInformation("Posted {N} bill-payments to InTime", billPayments.Count);
+    }
+
     public async Task RecordSyncSummaryAsync(SessionState session)
     {
         var payload = new
@@ -67,6 +83,8 @@ public sealed class IntimeApiClient
             startedAt = session.StartedAt,
             invoicesUpdated = session.InvoicesUpdated,
             paymentsProcessed = session.PaymentsProcessed,
+            billsUpdated = session.BillsUpdated,
+            billPaymentsProcessed = session.BillPaymentsProcessed,
             customersAdded = session.CustomersAdded,
             customersFailed = session.CustomersFailed,
             lastSyncDate = session.LastSyncDate,
